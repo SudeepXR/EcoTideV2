@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lake Coverage Path Planner</title>
+  <meta name="description" content="Draw a lake boundary polygon on the map and auto-generate a zig-zag lawnmower coverage path for survey missions." />
+
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet.draw CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+
+  <!-- App CSS -->
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+    <aside id="sidebar">
+
+      <!-- Brand -->
+      <div class="brand">
+        <div class="brand-icon">🌊</div>
+        <div class="brand-text">
+          <h1>Coverage Planner</h1>
+          <p>Lake Survey Path Generator</p>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Location Search -->
+      <div>
+        <p class="section-label">Find Location</p>
+        <div style="display:flex; gap:6px;">
+          <input
+            type="text"
+            id="location-search-input"
+            class="esp-ip-field"
+            placeholder="e.g. Lake Tahoe"
+            aria-label="Search location"
+          />
+          <button id="location-search-btn" class="btn btn-secondary" style="width:auto; padding:6px 12px; font-size:11px;" aria-label="Search">
+            Search
+          </button>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Steps -->
+      <div>
+        <p class="section-label">Workflow</p>
+        <div class="steps">
+          <div class="step active" id="step-1">
+            <div class="step-num">1</div>
+            <div class="step-text">Draw a polygon over your lake using the draw tool on the map</div>
+          </div>
+          <div class="step" id="step-2">
+            <div class="step-num">2</div>
+            <div class="step-text">Set the sweep line spacing and click <strong>Generate</strong></div>
+          </div>
+          <div class="step" id="step-3">
+            <div class="step-num">3</div>
+            <div class="step-text">Review the zig-zag path and waypoints on the map</div>
+          </div>
+          <div class="step" id="step-4">
+            <div class="step-num">4</div>
+            <div class="step-text">Send waypoints to the <strong>ESP32 boat</strong> for autonomous navigation</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Path Spacing Control -->
+      <div>
+        <p class="section-label">Path Settings</p>
+        <div class="control-group">
+          <div class="control-row">
+            <span class="control-label">Sweep Line Spacing</span>
+            <span class="control-value" id="spacing-value">8 m</span>
+          </div>
+          <input
+            type="range"
+            id="spacing-slider"
+            min="2"
+            max="20"
+            value="8"
+            step="1"
+            aria-label="Path spacing in metres"
+          />
+          <div class="slider-bounds">
+            <span>2 m (dense)</span>
+            <span>20 m (sparse)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button
+          id="generate-btn"
+          class="btn btn-primary"
+          disabled
+          aria-label="Generate coverage path"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="13 17 18 12 13 7"/>
+            <polyline points="6 17 11 12 6 7"/>
+          </svg>
+          Generate Coverage Path
+        </button>
+
+        <button
+          id="clear-btn"
+          class="btn btn-secondary"
+          aria-label="Clear map"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4h6v2"/>
+          </svg>
+          Clear Map
+        </button>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Stats -->
+      <div>
+        <p class="section-label">Path Statistics</p>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-waypoints">—</div>
+            <div class="stat-label">Waypoints</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-length">—</div>
+            <div class="stat-label">Total Length</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-spacing">—</div>
+            <div class="stat-label">Spacing</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-lines">—</div>
+            <div class="stat-label">Sweep Lines</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Export Coordinates (hidden until path is generated) -->
+      <div id="export-section" style="display:none;">
+        <div class="divider"></div>
+        <p class="section-label">Export Coordinates</p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <button
+            id="download-btn"
+            class="btn btn-primary"
+            aria-label="Download path as JSON"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Path JSON
+          </button>
+          <button
+            id="copy-btn"
+            class="btn btn-secondary"
+            aria-label="Copy coordinates to clipboard"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+            Copy as lat, lon List
+          </button>
+        </div>
+        <p style="font-size:10px; color:var(--text-muted); margin-top:6px; line-height:1.5;">
+          JSON includes index, lat &amp; lon per waypoint.<br/>
+          Text format: one <code style="color:var(--accent)">lat, lon</code> per line.
+        </p>
+      </div>
+
+      <!-- ESP32 / Boat Section (hidden until path is generated) -->
+      <div id="esp-section" style="display:none;">
+        <div class="divider"></div>
+        <p class="section-label">ESP32 Boat Control</p>
+
+        <!-- ESP32 IP Config -->
+        <div class="control-group" style="margin-bottom:10px;">
+          <div class="control-row">
+            <span class="control-label">ESP32 IP Address</span>
+            <span class="control-value esp-status-dot" id="esp-status-dot" title="Connection status">●</span>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <input
+              type="text"
+              id="esp-ip-input"
+              class="esp-ip-field"
+              value="192.168.1.100"
+              placeholder="e.g. 192.168.1.100"
+              aria-label="ESP32 IP address"
+            />
+            <button id="esp-ping-btn" class="btn btn-secondary" style="width:auto; padding:6px 12px; font-size:11px;" aria-label="Ping ESP32">
+              Ping
+            </button>
+          </div>
+        </div>
+
+        <!-- Send to Boat -->
+        <button
+          id="send-to-boat-btn"
+          class="btn btn-boat"
+          aria-label="Send waypoints to ESP32 boat"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 20h20"/>
+            <path d="M3.5 15h17l-2-7H5.5L3.5 15z"/>
+            <path d="M12 4v4"/>
+            <path d="M9 4h6"/>
+          </svg>
+          Send to Boat
+        </button>
+
+        <!-- Transmission Result -->
+        <div id="esp-result" class="esp-result" style="display:none;"></div>
+      </div>
+
+      <!-- Status Bar -->
+      <div id="status-bar">Draw a polygon on the map to begin.</div>
+
+    </aside>
+
+    <!-- ── Map ────────────────────────────────────────────────────────────── -->
+    <div id="map-container">
+      <div id="map" aria-label="Interactive map for drawing lake polygon"></div>
+
+      <!-- Live badge -->
+      <div id="map-badge">
+        <div class="badge-dot"></div>
+        Live Map
+      </div>
+
+      <!-- Legend -->
+      <div id="legend">
+        <div class="legend-title">Legend</div>
+        <div class="legend-item">
+          <div class="legend-line" style="background:#58a6ff; opacity:0.5; border: 2px dashed #58a6ff; height:0;"></div>
+          Polygon Boundary
+        </div>
+        <div class="legend-item">
+          <div class="legend-line" style="background:#58a6ff;"></div>
+          Coverage Path
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="color:#79bcff; background:#1f6feb; border-radius:50%; width:10px; height:10px;"></div>
+          Waypoints
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /#app -->
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Leaflet.draw JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+  <!-- App JS -->
+  <script src="/static/script.js"></script>
+</body>
+</html>

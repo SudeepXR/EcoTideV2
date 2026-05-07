@@ -1,0 +1,4 @@
+flask
+shapely
+numpy
+requests
