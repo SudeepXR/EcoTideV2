@@ -170,7 +170,7 @@ def generate_pdf_report(location: str = "Unknown Location"):
     
     # Title
     pdf.set_font("helvetica", style='B', size=16)
-    pdf.cell(0, 10, txt="AquaSense - Water Quality Report", ln=True, align='C')
+    pdf.cell(0, 10, txt="EcoTide - Water Quality Report", ln=True, align='C')
     pdf.ln(5)
 
     # Date and Location
@@ -211,7 +211,7 @@ def generate_pdf_report(location: str = "Unknown Location"):
     # Footer
     pdf.ln(20)
     pdf.set_font("helvetica", style='I', size=10)
-    pdf.cell(0, 10, txt="Generated automatically by AquaSense IoT Dashboard", ln=True, align='C')
+    pdf.cell(0, 10, txt="Generated automatically by EcoTide IoT Dashboard", ln=True, align='C')
 
     report_path = "latest_report.pdf"
     pdf.output(report_path)

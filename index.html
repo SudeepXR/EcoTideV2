@@ -3,36 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EcoTide — Autonomous Water Quality Monitoring</title>
-  <meta name="description" content="EcoTide unified mission planner and live water quality monitor for autonomous survey boats." />
+  <title>EcoTide v2 — Autonomous Aquatic Monitoring System</title>
+  <meta name="description" content="EcoTide: Autonomous floating system for real-time polluted water mapping and filtration. Mission planning, live telemetry, and manual boat control." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <link rel="stylesheet" href="./static/ecotide.css" />
 </head>
 <body>
 
-<!-- ══════════ GLOBAL NAV BAR ══════════ -->
+<!-- ══════════ SYSTEM TOPBAR ══════════ -->
 <nav id="global-nav">
   <div class="nav-brand">
-    <span class="nav-logo">🚤</span>
-    <span class="nav-title">EcoTide</span>
-    <span class="nav-badge">v2</span>
+    <div class="nav-brand-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2"><path d="M2 20h20M3.5 15h17l-2-7H5.5L3.5 15zM12 4v4M9 4h6"/></svg>
+    </div>
+    <span class="nav-title">ECOTIDE</span>
+    <span class="nav-ver">v2.1.0</span>
+    <div class="nav-sep"></div>
+    <span class="nav-system-id">SYS:ET-AMS-002</span>
   </div>
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="showView('planner')" id="tab-planner">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-      Mission Planner
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      MISSION PLANNER
     </button>
     <button class="nav-tab" onclick="showView('monitor')" id="tab-monitor">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      Live Monitor
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      LIVE TELEMETRY
+    </button>
+    <button class="nav-tab" onclick="showView('navigation')" id="tab-navigation">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+      MANUAL CTRL
     </button>
   </div>
-  <div class="nav-status" id="nav-connection-status">
-    <span class="nav-dot"></span> Systems Ready
+  <div class="nav-right">
+    <button id="theme-toggle" class="nav-tab" title="Toggle Light/Dark Mode">
+      <svg id="theme-icon-dark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M12 3c.132 0 .263 0 .393 0a9 9 0 1 1 0 18c-.13 0-.26 0-.393 0a9 9 0 0 1 0-18Z"/></svg>
+      <svg id="theme-icon-light" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+    </button>
+    <div class="sys-status" id="nav-connection-status">
+      <span class="nav-dot"></span>
+      <span class="sys-label">SYSTEMS NOMINAL</span>
+    </div>
+    <div class="nav-time" id="nav-clock">--:--:--</div>
   </div>
 </nav>
 
@@ -45,84 +61,171 @@
 <div id="view-planner" class="view">
   <div id="planner-app">
     <aside id="sidebar">
-      <div class="brand"><div class="brand-icon">🌊</div><div class="brand-text"><h1>Coverage Planner</h1><p>Lake Survey Path Generator</p></div></div>
-      <div class="divider"></div>
-      <div><p class="section-label">Find Location</p><div style="display:flex;gap:6px;"><input type="text" id="location-search-input" class="esp-ip-field" placeholder="e.g. Lake Tahoe" /><button id="location-search-btn" class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:11px;">Search</button></div></div>
-      <div class="divider"></div>
-      <div><p class="section-label">Workflow</p>
+      <!-- Header -->
+      <div class="sb-header">
+        <div class="sb-title-row">
+          <span class="sb-tag">COVERAGE PLANNER</span>
+          <span class="sb-status-pill">READY</span>
+        </div>
+        <p class="sb-subtitle">Autonomous survey path generator — differential-drive hull</p>
+      </div>
+
+      <div class="sb-divider"></div>
+
+      <!-- Location Search -->
+      <div class="sb-section">
+        <p class="section-label">TARGET AREA</p>
+        <div class="input-row">
+          <input type="text" id="location-search-input" class="sys-input" placeholder="Lake name or coordinates..." />
+          <button id="location-search-btn" class="btn-icon" title="Search location">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="sb-divider"></div>
+
+      <!-- Mission Steps -->
+      <div class="sb-section">
+        <p class="section-label">MISSION WORKFLOW</p>
         <div class="steps">
-          <div class="step active" id="step-1"><div class="step-num">1</div><div class="step-text">Draw a polygon over your lake using the draw tool on the map</div></div>
-          <div class="step" id="step-2"><div class="step-num">2</div><div class="step-text">Set the sweep line spacing and click <strong>Generate</strong></div></div>
-          <div class="step" id="step-3"><div class="step-num">3</div><div class="step-text">Review the zig-zag path and waypoints on the map</div></div>
-          <div class="step" id="step-4"><div class="step-num">4</div><div class="step-text">Send waypoints to the <strong>ESP32 boat</strong> for autonomous navigation</div></div>
+          <div class="step active" id="step-1">
+            <div class="step-num">01</div>
+            <div class="step-text">Draw polygon boundary over target water body</div>
+          </div>
+          <div class="step" id="step-2">
+            <div class="step-num">02</div>
+            <div class="step-text">Configure sweep spacing, generate lawnmower path</div>
+          </div>
+          <div class="step" id="step-3">
+            <div class="step-num">03</div>
+            <div class="step-text">Review zig-zag coverage and waypoint density</div>
+          </div>
+          <div class="step" id="step-4">
+            <div class="step-num">04</div>
+            <div class="step-text">Transmit waypoints to ESP32 — autonomous mission begins</div>
+          </div>
         </div>
       </div>
-      <div class="divider"></div>
-      <div><p class="section-label">Path Settings</p>
-        <div class="control-group">
-          <div class="control-row"><span class="control-label">Sweep Line Spacing</span><span class="control-value" id="spacing-value">8 m</span></div>
-          <input type="range" id="spacing-slider" min="2" max="20" value="8" step="1" />
-          <div class="slider-bounds"><span>2 m (dense)</span><span>20 m (sparse)</span></div>
+
+      <div class="sb-divider"></div>
+
+      <!-- Path Config -->
+      <div class="sb-section">
+        <p class="section-label">PATH PARAMETERS</p>
+        <div class="param-row">
+          <span class="param-label">SWEEP SPACING</span>
+          <span class="param-value mono" id="spacing-value">8 m</span>
+        </div>
+        <input type="range" id="spacing-slider" min="2" max="20" value="8" step="1" />
+        <div class="slider-bounds">
+          <span>2 m / dense</span>
+          <span>20 m / sparse</span>
         </div>
       </div>
-      <div class="divider"></div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button id="generate-btn" class="btn btn-primary" disabled>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
-          Generate Coverage Path
+
+      <div class="sb-divider"></div>
+
+      <!-- Actions -->
+      <div class="sb-section">
+        <button id="generate-btn" class="btn-primary" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+          GENERATE COVERAGE PATH
         </button>
-        <button id="clear-btn" class="btn btn-secondary">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-          Clear Map
+        <button id="clear-btn" class="btn-secondary" style="margin-top:6px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+          CLEAR MAP
         </button>
       </div>
-      <div class="divider"></div>
-      <div><p class="section-label">Path Statistics</p>
+
+      <div class="sb-divider"></div>
+
+      <!-- Stats -->
+      <div class="sb-section">
+        <p class="section-label">PATH STATISTICS</p>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-value" id="stat-waypoints">—</div><div class="stat-label">Waypoints</div></div>
-          <div class="stat-card"><div class="stat-value" id="stat-length">—</div><div class="stat-label">Total Length</div></div>
-          <div class="stat-card"><div class="stat-value" id="stat-spacing">—</div><div class="stat-label">Spacing</div></div>
-          <div class="stat-card"><div class="stat-value" id="stat-lines">—</div><div class="stat-label">Sweep Lines</div></div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-waypoints">—</div>
+            <div class="stat-label">WAYPOINTS</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-length">—</div>
+            <div class="stat-label">TOTAL LENGTH</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-spacing">—</div>
+            <div class="stat-label">SPACING</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="stat-lines">—</div>
+            <div class="stat-label">SWEEP LINES</div>
+          </div>
         </div>
       </div>
+
+      <!-- Export -->
       <div id="export-section" style="display:none;">
-        <div class="divider"></div>
-        <p class="section-label">Export Coordinates</p>
-        <div style="display:flex;flex-direction:column;gap:8px;">
-          <button id="download-btn" class="btn btn-primary">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download Path JSON
+        <div class="sb-divider"></div>
+        <div class="sb-section">
+          <p class="section-label">EXPORT WAYPOINTS</p>
+          <button id="download-btn" class="btn-primary">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            DOWNLOAD JSON
           </button>
-          <button id="copy-btn" class="btn btn-secondary">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            Copy as lat, lon List
+          <button id="copy-btn" class="btn-secondary" style="margin-top:6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            COPY lat, lon LIST
           </button>
+          <p class="hint-text">JSON: index, lat, lon per waypoint.</p>
         </div>
-        <p style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.5;">JSON includes index, lat &amp; lon per waypoint.<br/>Text format: one <code style="color:var(--accent)">lat, lon</code> per line.</p>
       </div>
+
+      <!-- ESP32 Control -->
       <div id="esp-section" style="display:none;">
-        <div class="divider"></div>
-        <p class="section-label">ESP32 Boat Control</p>
-        <div class="control-group" style="margin-bottom:10px;">
-          <div class="control-row"><span class="control-label">ESP32 IP Address</span><span class="control-value esp-status-dot" id="esp-status-dot" title="Connection status">●</span></div>
-          <div style="display:flex;gap:6px;"><input type="text" id="esp-ip-input" class="esp-ip-field" value="192.168.1.100" placeholder="e.g. 192.168.1.100" /><button id="esp-ping-btn" class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:11px;">Ping</button></div>
+        <div class="sb-divider"></div>
+        <div class="sb-section">
+          <p class="section-label">ESP32 BOAT — UPLINK</p>
+          <div class="param-row" style="margin-bottom:6px;">
+            <span class="param-label">TARGET IP</span>
+            <span class="control-value esp-status-dot" id="esp-status-dot" title="Link status">●</span>
+          </div>
+          <div class="input-row">
+            <input type="text" id="esp-ip-input" class="sys-input mono" value="192.168.1.100" placeholder="192.168.x.x" />
+            <button id="esp-ping-btn" class="btn-icon" title="Ping ESP32">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <button id="send-to-boat-btn" class="btn-transmit" style="margin-top:8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20"/><path d="M3.5 15h17l-2-7H5.5L3.5 15z"/><path d="M12 4v4M9 4h6"/></svg>
+            TRANSMIT WAYPOINTS
+          </button>
+          <button id="repeatBtn" onclick="repeatMission()" disabled
+            style="background:#555; border:none; color:white;
+                   padding:10px 20px; border-radius:8px;
+                   font-size:15px; cursor:pointer;
+                   margin-top:8px; width:100%; opacity:0.5;">
+            🔁 Repeat Mission (Return Path)
+          </button>
+          <div id="esp-result" class="esp-result" style="display:none;"></div>
         </div>
-        <button id="send-to-boat-btn" class="btn btn-boat">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20"/><path d="M3.5 15h17l-2-7H5.5L3.5 15z"/><path d="M12 4v4"/><path d="M9 4h6"/></svg>
-          Send to Boat
-        </button>
-        <div id="esp-result" class="esp-result" style="display:none;"></div>
       </div>
-      <div id="status-bar">Draw a polygon on the map to begin.</div>
+
+      <!-- Status Bar -->
+      <div class="sb-divider"></div>
+      <div id="status-bar" class="status-bar">Draw a polygon on the map to begin.</div>
     </aside>
+
     <div id="map-container">
       <div id="map"></div>
-      <div id="map-badge"><div class="badge-dot"></div>Live Map</div>
+      <div id="map-badge">
+        <div class="badge-dot"></div>
+        <span class="mono">LIVE CHART</span>
+      </div>
       <div id="legend">
-        <div class="legend-title">Legend</div>
-        <div class="legend-item"><div class="legend-line" style="background:#58a6ff;opacity:0.5;border:2px dashed #58a6ff;height:0;"></div>Polygon Boundary</div>
-        <div class="legend-item"><div class="legend-line" style="background:#58a6ff;"></div>Coverage Path</div>
-        <div class="legend-item"><div class="legend-dot" style="color:#79bcff;background:#1f6feb;border-radius:50%;width:10px;height:10px;"></div>Waypoints</div>
+        <div class="legend-title">MAP LEGEND</div>
+        <div class="legend-item"><div class="legend-line" style="background:#00C2A8;opacity:0.5;border:1px dashed #00C2A8;height:0;"></div>Survey Boundary</div>
+        <div class="legend-item"><div class="legend-line" style="background:#3B82F6;"></div>Coverage Path</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3B82F6;border-radius:50%;width:8px;height:8px;border:1px solid #60a5fa;"></div>Waypoints</div>
       </div>
     </div>
   </div>
@@ -134,41 +237,118 @@
 <div id="view-monitor" class="view" style="display:none;">
   <div class="monitor-wrapper">
     <div class="dashboard-container">
+
+      <!-- Monitor Header -->
       <header class="dashboard-header">
-        <div class="title-section"><h1>AquaSense</h1><p>Real-Time IoT Water Quality Monitoring</p></div>
-        <div class="status-panel">
-          <div class="status-indicator"><span class="dot" id="backend-dot"></span><span id="backend-text">Connecting...</span></div>
-          <div class="status-indicator"><span class="dot" id="monitor-dot"></span><span id="monitor-text">Monitoring Status</span></div>
-          <div class="reading-count">Total Readings: <span id="val-reading-count">--</span></div>
+        <div class="dh-left">
+          <div class="dh-title-block">
+            <span class="dh-sys-tag mono">EcoTide — SENSOR ARRAY</span>
+            <h1 class="dh-title">Water Quality Telemetry</h1>
+          </div>
+          <div class="status-panel">
+            <div class="status-indicator">
+              <span class="dot" id="backend-dot"></span>
+              <span id="backend-text" class="mono">Connecting...</span>
+            </div>
+            <div class="status-indicator">
+              <span class="dot" id="monitor-dot"></span>
+              <span id="monitor-text" class="mono">Monitoring Status</span>
+            </div>
+            <div class="reading-count mono">READINGS: <span id="val-reading-count">--</span></div>
+          </div>
         </div>
         <div class="control-panel-monitor">
           <button id="btn-report" class="mbtn mbtn-secondary">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-            Generate Report
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            GEN. REPORT
+          </button>
+          <button id="aiReportBtn" onclick="generateAIReport()"
+            style="background:#1a3a5c; border:none; color:white;
+                   padding:10px 20px; border-radius:8px;
+                   font-size:15px; cursor:pointer; margin-left:8px;">
+            🤖 AI Summary
           </button>
           <button id="btn-start" class="mbtn mbtn-primary">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            Start Monitoring
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            START
           </button>
           <button id="btn-stop" class="mbtn mbtn-danger">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
-            Pause
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            PAUSE
           </button>
         </div>
       </header>
+
+      <div id="aiReportBox"
+        style="display:none; background:#1e1e1e;
+               border:1px solid #444; border-radius:10px;
+               padding:20px; margin:16px 0; font-size:14px;
+               line-height:1.7; color:#ddd; white-space:pre-wrap;">
+      </div>
+
       <main class="dashboard-main">
+
+        <!-- WQI Banner -->
         <div class="wqi-banner" id="wqi-card">
-          <div class="wqi-info"><h2>Water Quality Index (WQI)</h2><div class="wqi-status-label" id="wqi-quality">Calibrating...</div></div>
-          <div class="wqi-score"><span class="score-value" id="val-wqi">--</span><span class="score-label">/100</span></div>
+          <div class="wqi-info">
+            <div class="wqi-sys-label mono">WATER QUALITY INDEX — COMPOSITE SCORE</div>
+            <h2 class="wqi-status-label" id="wqi-quality">Calibrating...</h2>
+          </div>
+          <div class="wqi-score">
+            <span class="score-value" id="val-wqi">--</span>
+            <span class="score-label mono">/100</span>
+          </div>
         </div>
+
+        <!-- Sensor Grid -->
         <div class="sensor-grid">
-          <div class="sensor-card"><div class="card-icon">🌡️</div><div class="card-body"><h3>Temperature</h3><div class="value-row"><span class="current-val" id="val-temp">--</span><span class="unit">°C</span></div><div class="avg-row"><span>Avg: <span id="avg-temp">--</span> °C</span></div></div></div>
-          <div class="sensor-card"><div class="card-icon">🧪</div><div class="card-body"><h3>pH Level</h3><div class="value-row"><span class="current-val" id="val-ph">--</span><span class="unit">pH</span></div><div class="avg-row"><span>Avg: <span id="avg-ph">--</span> pH</span></div></div></div>
-          <div class="sensor-card"><div class="card-icon">💧</div><div class="card-body"><h3>TDS</h3><div class="value-row"><span class="current-val" id="val-tds">--</span><span class="unit">ppm</span></div><div class="avg-row"><span>Avg: <span id="avg-tds">--</span> ppm</span></div></div></div>
-          <div class="sensor-card"><div class="card-icon">🌊</div><div class="card-body"><h3>Turbidity</h3><div class="value-row"><span class="current-val" id="val-tb">--</span><span class="unit">NTU</span></div><div class="avg-row"><span>Avg: <span id="avg-tb">--</span> NTU</span></div></div></div>
-          <div class="sensor-card"><div class="card-icon">💨</div><div class="card-body"><h3>Ammonia (NH3)</h3><div class="value-row"><span class="current-val" id="val-nh3">--</span><span class="unit">ppm</span></div><div class="avg-row"><span>Avg: <span id="avg-nh3">--</span> ppm</span></div></div></div>
+          <div class="sensor-card sc-temp">
+            <div class="sc-header">
+              <span class="sc-tag mono">TEMP</span>
+              <span class="sc-unit">°C</span>
+            </div>
+            <div class="sc-value"><span class="current-val" id="val-temp">--</span></div>
+            <div class="sc-avg mono">AVG <span id="avg-temp">--</span> °C</div>
+          </div>
+          <div class="sensor-card sc-ph">
+            <div class="sc-header">
+              <span class="sc-tag mono">pH</span>
+              <span class="sc-unit">level</span>
+            </div>
+            <div class="sc-value"><span class="current-val" id="val-ph">--</span></div>
+            <div class="sc-avg mono">AVG <span id="avg-ph">--</span> pH</div>
+          </div>
+          <div class="sensor-card sc-tds">
+            <div class="sc-header">
+              <span class="sc-tag mono">TDS</span>
+              <span class="sc-unit">ppm</span>
+            </div>
+            <div class="sc-value"><span class="current-val" id="val-tds">--</span></div>
+            <div class="sc-avg mono">AVG <span id="avg-tds">--</span> ppm</div>
+          </div>
+          <div class="sensor-card sc-turb">
+            <div class="sc-header">
+              <span class="sc-tag mono">TURBIDITY</span>
+              <span class="sc-unit">NTU</span>
+            </div>
+            <div class="sc-value"><span class="current-val" id="val-tb">--</span></div>
+            <div class="sc-avg mono">AVG <span id="avg-tb">--</span> NTU</div>
+          </div>
+          <div class="sensor-card sc-nh3">
+            <div class="sc-header">
+              <span class="sc-tag mono">NH₃</span>
+              <span class="sc-unit">ppm</span>
+            </div>
+            <div class="sc-value"><span class="current-val" id="val-nh3">--</span></div>
+            <div class="sc-avg mono">AVG <span id="avg-nh3">--</span> ppm</div>
+          </div>
         </div>
-        <h2 class="section-title">Historical Trends</h2>
+
+        <!-- Charts -->
+        <div class="charts-section-header">
+          <span class="section-label">HISTORICAL TRENDS — LAST 30 READINGS</span>
+          <div class="chart-ts mono" id="chart-timestamp">--</div>
+        </div>
         <div class="charts-grid">
           <div class="chart-card"><canvas id="chartWQI"></canvas></div>
           <div class="chart-card"><canvas id="chartTemp"></canvas></div>
@@ -182,10 +362,113 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- VIEW 3: NAVIGATION CONTROL                                               -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div id="view-navigation" class="view" style="display:none">
+  <div class="nav-ctrl-wrapper">
+
+    <!-- Left: Status panel -->
+    <div class="nav-ctrl-left">
+      <div class="nav-ctrl-header">
+        <span class="sb-tag">VESSEL CONTROL — ESP8266 BRIDGE</span>
+        <span class="nav-ctrl-fw mono">FW:1.2.4</span>
+      </div>
+
+      <div class="mode-block" id="modeBanner">
+        <div class="mode-indicator-row">
+          <span class="mode-label-tag mono">OPERATING MODE</span>
+          <span class="mode-pill" id="modeLabel">MANUAL</span>
+        </div>
+        <div class="mode-buttons">
+          <button class="mode-btn manual-btn" onclick="setMode('manual')">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            MANUAL
+          </button>
+          <button class="mode-btn auto-btn" onclick="setMode('auto')">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            AUTONOMOUS
+          </button>
+        </div>
+      </div>
+
+      <div class="telemetry-panel">
+        <div class="telem-row">
+          <span class="telem-key mono">LINK STATUS</span>
+          <span class="telem-val" id="esp8266Status">UNKNOWN</span>
+        </div>
+        <div class="telem-row">
+          <span class="telem-key mono">PROTOCOL</span>
+          <span class="telem-val mono">HTTP/1.1 REST</span>
+        </div>
+        <div class="telem-row">
+          <span class="telem-key mono">DRIVER IC</span>
+          <span class="telem-val mono">L298N DUAL-H</span>
+        </div>
+        <div class="telem-row">
+          <span class="telem-key mono">BURST PULSE</span>
+          <span class="telem-val mono">180 ms</span>
+        </div>
+      </div>
+
+      <div class="nav-hint mono">
+        Hold directional button to drive.<br>
+        Release to stop. MANUAL mode only.
+      </div>
+    </div>
+
+    <!-- Right: D-Pad -->
+    <div class="nav-ctrl-right">
+      <div class="dpad-label mono">DIRECTIONAL CONTROL</div>
+      <div class="dpad">
+        <div></div>
+        <button class="dpad-btn dpad-fwd" onpointerdown="sendCmd('forward')" onpointerup="sendCmd('stop')" onpointerleave="sendCmd('stop')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <div></div>
+
+        <button class="dpad-btn dpad-left" onpointerdown="sendCmd('left')" onpointerup="sendCmd('stop')" onpointerleave="sendCmd('stop')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button class="dpad-btn stop-btn" onclick="sendCmd('stop')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
+        </button>
+        <button class="dpad-btn dpad-right" onpointerdown="sendCmd('right')" onpointerup="sendCmd('stop')" onpointerleave="sendCmd('stop')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+
+        <div></div>
+        <button class="dpad-btn dpad-bwd" onpointerdown="sendCmd('backward')" onpointerup="sendCmd('stop')" onpointerleave="sendCmd('stop')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div></div>
+      </div>
+      <div class="dpad-legend mono">FWD / PORT / STOP / STBD / AFT</div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════ SCRIPTS ══════════ -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    const t = now.toISOString().substr(11, 8) + ' UTC';
+    const el = document.getElementById('nav-clock');
+    if (el) el.textContent = t;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // Chart timestamp
+  setInterval(() => {
+    const el = document.getElementById('chart-timestamp');
+    if (el) el.textContent = new Date().toISOString().substr(0,19).replace('T',' ') + 'Z';
+  }, 2000);
+</script>
 <script src="./static/ecotide.js"></script>
 </body>
 </html>

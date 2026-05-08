@@ -34,10 +34,15 @@ const char* WIFI_SSID     = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // ─── Pin Definitions ─────────────────────────────────────────────────────────
-// GPS UART (Serial2)
-#define GPS_RX_PIN 16
-#define GPS_TX_PIN 17
-#define GPS_BAUD   9600
+// GPS UART (Serial1)
+#define GPS_RX_PIN  13   // was 16
+#define GPS_TX_PIN  15   // was 17
+#define GPS_BAUD    9600
+
+// Bluetooth (HC-05)
+#define BT_RX_PIN  16   // NOTE: GPS currently uses 16/17 — see CHANGE 2
+#define BT_TX_PIN  17
+#define BT_BAUD    9600
 
 // Motor Driver (L298N style — adjust for your driver)
 #define MOTOR_LEFT_FWD   25
@@ -61,8 +66,8 @@ const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 // ─── PWM Config ──────────────────────────────────────────────────────────────
 #define PWM_FREQ     5000
 #define PWM_RES      8
-#define PWM_CH_LEFT  0
-#define PWM_CH_RIGHT 1
+// #define PWM_CH_LEFT  0
+// #define PWM_CH_RIGHT 1
 
 // ─── Globals ─────────────────────────────────────────────────────────────────
 struct Waypoint {
@@ -77,6 +82,12 @@ bool navigationActive = false;
 
 TinyGPSPlus gps;
 WebServer server(80);
+
+// ─── Bluetooth / Mode Control ──────────────────────────────────────────────
+enum BoatMode { AUTO, MANUAL };
+BoatMode currentMode = AUTO;
+
+HardwareSerial BTSerial(2);  // UART2 — HC-05
 
 double currentLat = 0.0;
 double currentLon = 0.0;
@@ -95,8 +106,11 @@ void setup() {
   Serial.println("======================================");
 
   // GPS Serial
-  Serial2.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-  Serial.println("[GPS]  Serial2 initialised");
+  Serial1.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  Serial.println("[GPS]  Serial1 initialised");
+
+  BTSerial.begin(BT_BAUD, SERIAL_8N1, BT_RX_PIN, BT_TX_PIN);
+  Serial.println("[BT]   HC-05 Bluetooth serial initialised");
 
   // I2C for compass
   Wire.begin();
@@ -119,12 +133,15 @@ void setup() {
 //  MAIN LOOP (non-blocking)
 // ══════════════════════════════════════════════════════════════════════════════
 void loop() {
+  // 0. Bluetooth command handler (checked every loop — highest priority)
+  handleBluetooth();
+
   // 1. Handle incoming HTTP requests
   server.handleClient();
 
   // 2. Feed GPS data
-  while (Serial2.available() > 0) {
-    gps.encode(Serial2.read());
+  while (Serial1.available() > 0) {
+    gps.encode(Serial1.read());
   }
 
   // 3. Update GPS position
@@ -139,7 +156,8 @@ void loop() {
 
   // 5. Navigation loop (throttled)
   unsigned long now = millis();
-  if (navigationActive && (now - lastNavUpdate >= NAV_UPDATE_MS)) {
+  if (currentMode == AUTO && navigationActive && 
+      (now - lastNavUpdate >= NAV_UPDATE_MS)) {
     lastNavUpdate = now;
     navigateToWaypoint();
   }
@@ -185,6 +203,7 @@ void setupServerRoutes() {
     doc["currentIndex"] = currentWaypointIndex;
     doc["navigationActive"] = navigationActive;
     doc["gpsValid"] = gpsValid;
+    doc["mode"] = (currentMode == AUTO) ? "auto" : "manual";
 
     String response;
     serializeJson(doc, response);
@@ -281,6 +300,89 @@ void setupServerRoutes() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+//  BLUETOOTH CONTROL
+// ══════════════════════════════════════════════════════════════════════════════
+void handleBluetooth() {
+  if (!BTSerial.available()) return;
+  char cmd = (char)BTSerial.read();
+
+  // ── Mode switching (always accepted regardless of current mode) ──
+  if (cmd == 'M') {
+    currentMode = MANUAL;
+    navigationActive = false;   // pause GPS nav cleanly
+    stopMotors();
+    Serial.println("[BT]   Mode → MANUAL");
+    BTSerial.println("MODE:MANUAL");
+    return;
+  }
+  if (cmd == 'A') {
+    currentMode = AUTO;
+    // Resume navigation if waypoints exist and mission isn't complete
+    if (waypointCount > 0 && currentWaypointIndex < waypointCount) {
+      navigationActive = true;
+      Serial.println("[BT]   Mode → AUTO  (navigation resumed)");
+      BTSerial.println("MODE:AUTO");
+    } else {
+      Serial.println("[BT]   Mode → AUTO  (no active mission)");
+      BTSerial.println("MODE:AUTO_IDLE");
+    }
+    return;
+  }
+
+  // ── Movement commands — only accepted in MANUAL mode ──
+  if (currentMode != MANUAL) return;
+
+  // Each command drives motors for a fixed burst then stops.
+  // Adjust MANUAL_BURST_MS to tune responsiveness.
+  const int MANUAL_BURST_MS = 180;
+
+  switch (cmd) {
+    case 'F':
+      driveForward(BASE_SPEED);
+      delay(MANUAL_BURST_MS);
+      stopMotors();
+      Serial.println("[BT]   CMD: FORWARD");
+      break;
+    case 'B':
+  // Both motors backward
+  digitalWrite(MOTOR_LEFT_FWD,  LOW);
+  digitalWrite(MOTOR_LEFT_BWD,  HIGH);
+
+  digitalWrite(MOTOR_RIGHT_FWD, LOW);
+  digitalWrite(MOTOR_RIGHT_BWD, HIGH);
+
+  ledcWrite(MOTOR_LEFT_EN,  BASE_SPEED);
+  ledcWrite(MOTOR_RIGHT_EN, BASE_SPEED);
+
+  delay(MANUAL_BURST_MS);
+
+  stopMotors();
+
+  Serial.println("[BT]   CMD: BACKWARD");
+  break;
+    case 'R':
+      turnRight(TURN_SPEED);
+      delay(MANUAL_BURST_MS);
+      stopMotors();
+      Serial.println("[BT]   CMD: ROTATE RIGHT");
+      break;
+    case 'L':
+      turnLeft(TURN_SPEED);
+      delay(MANUAL_BURST_MS);
+      stopMotors();
+      Serial.println("[BT]   CMD: ROTATE LEFT");
+      break;
+    case 'S':
+      stopMotors();
+      Serial.println("[BT]   CMD: STOP");
+      break;
+    default:
+      // Unknown command — silently ignore
+      break;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 //  NAVIGATION CORE
 // ══════════════════════════════════════════════════════════════════════════════
 void navigateToWaypoint() {
@@ -370,14 +472,14 @@ double normalizeAngle(double angle) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  MOTOR CONTROL
+//  MOTOR CONTROL (ESP32 Core 3.x Compatible)
 // ══════════════════════════════════════════════════════════════════════════════
+
 void setupMotors() {
-  // Configure PWM channels
-  ledcSetup(PWM_CH_LEFT, PWM_FREQ, PWM_RES);
-  ledcSetup(PWM_CH_RIGHT, PWM_FREQ, PWM_RES);
-  ledcAttachPin(MOTOR_LEFT_EN, PWM_CH_LEFT);
-  ledcAttachPin(MOTOR_RIGHT_EN, PWM_CH_RIGHT);
+
+  // Configure PWM directly on pins
+  ledcAttach(MOTOR_LEFT_EN, PWM_FREQ, PWM_RES);
+  ledcAttach(MOTOR_RIGHT_EN, PWM_FREQ, PWM_RES);
 
   // Direction pins
   pinMode(MOTOR_LEFT_FWD, OUTPUT);
@@ -386,47 +488,59 @@ void setupMotors() {
   pinMode(MOTOR_RIGHT_BWD, OUTPUT);
 
   stopMotors();
-  Serial.println("[MOT]  Motors initialised");
+
+  Serial.println("[MOT] Motors initialised");
 }
 
 void driveForward(int speed) {
+
   digitalWrite(MOTOR_LEFT_FWD, HIGH);
   digitalWrite(MOTOR_LEFT_BWD, LOW);
+
   digitalWrite(MOTOR_RIGHT_FWD, HIGH);
   digitalWrite(MOTOR_RIGHT_BWD, LOW);
-  ledcWrite(PWM_CH_LEFT, speed);
-  ledcWrite(PWM_CH_RIGHT, speed);
+
+  ledcWrite(MOTOR_LEFT_EN, speed);
+  ledcWrite(MOTOR_RIGHT_EN, speed);
 }
 
 void turnLeft(int speed) {
+
   // Left motor backward, right motor forward
   digitalWrite(MOTOR_LEFT_FWD, LOW);
   digitalWrite(MOTOR_LEFT_BWD, HIGH);
+
   digitalWrite(MOTOR_RIGHT_FWD, HIGH);
   digitalWrite(MOTOR_RIGHT_BWD, LOW);
-  ledcWrite(PWM_CH_LEFT, speed);
-  ledcWrite(PWM_CH_RIGHT, speed);
+
+  ledcWrite(MOTOR_LEFT_EN, speed);
+  ledcWrite(MOTOR_RIGHT_EN, speed);
 }
 
 void turnRight(int speed) {
+
   // Left motor forward, right motor backward
   digitalWrite(MOTOR_LEFT_FWD, HIGH);
   digitalWrite(MOTOR_LEFT_BWD, LOW);
+
   digitalWrite(MOTOR_RIGHT_FWD, LOW);
   digitalWrite(MOTOR_RIGHT_BWD, HIGH);
-  ledcWrite(PWM_CH_LEFT, speed);
-  ledcWrite(PWM_CH_RIGHT, speed);
+
+  ledcWrite(MOTOR_LEFT_EN, speed);
+  ledcWrite(MOTOR_RIGHT_EN, speed);
 }
 
 void stopMotors() {
+
   digitalWrite(MOTOR_LEFT_FWD, LOW);
   digitalWrite(MOTOR_LEFT_BWD, LOW);
+
   digitalWrite(MOTOR_RIGHT_FWD, LOW);
   digitalWrite(MOTOR_RIGHT_BWD, LOW);
-  ledcWrite(PWM_CH_LEFT, 0);
-  ledcWrite(PWM_CH_RIGHT, 0);
-}
 
+  ledcWrite(MOTOR_LEFT_EN, 0);
+  ledcWrite(MOTOR_RIGHT_EN, 0);
+}
 // ══════════════════════════════════════════════════════════════════════════════
 //  COMPASS (QMC5883L)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -481,6 +595,7 @@ void printDebugInfo() {
   Serial.printf("  Waypoints: %d loaded, current target: WP[%d]\n",
                 waypointCount, currentWaypointIndex);
   Serial.printf("  Nav:      %s\n", navigationActive ? "ACTIVE" : "IDLE");
+  Serial.printf("  Mode:     %s\n", currentMode == AUTO ? "AUTO" : "MANUAL");
 
   if (navigationActive && currentWaypointIndex < waypointCount && gpsValid) {
     double targetLat = waypoints[currentWaypointIndex].lat;

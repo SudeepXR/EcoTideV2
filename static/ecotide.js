@@ -5,6 +5,41 @@
 const FLASK_BASE = "http://localhost:5000";
 const FASTAPI_BASE = "http://localhost:8000";
 
+// ── ESP8266 Manual Control IP ──────────────────────────────────────────────
+// Update this after flashing ESP8266 and checking Serial Monitor
+const ESP8266_BASE = "http://192.168.x.x";  // ← change this
+
+// ── Groq AI Report Config ─────────────────────────────────────────────────
+const GROQ_API_KEY = "API_KEY_HERE";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+let lastWaypoints = null;  // stores last sent waypoint array
+
+// ── Theme Toggle Logic ──────────────────────────────────────────────────
+function initTheme() {
+  const theme = localStorage.getItem('theme') || 'dark';
+  if (theme === 'light') {
+    document.body.classList.add('light-mode');
+    document.getElementById('theme-icon-light').style.display = 'none';
+    document.getElementById('theme-icon-dark').style.display = 'block';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+    document.getElementById('theme-icon-light').style.display = isLight ? 'none' : 'block';
+    document.getElementById('theme-icon-dark').style.display = isLight ? 'block' : 'none';
+    
+    // Update charts for the new theme
+    if (typeof updateChartTheme === 'function') updateChartTheme();
+    
+    // Invalidate map size to prevent gray tiles on theme switch
+    if (window._map) window._map.invalidateSize();
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // VIEW SWITCHING
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,8 +49,10 @@ let monitorInitialized = false;
 function showView(name) {
   document.getElementById('view-planner').style.display = name === 'planner' ? 'block' : 'none';
   document.getElementById('view-monitor').style.display = name === 'monitor' ? 'block' : 'none';
+  document.getElementById('view-navigation').style.display = name === 'navigation' ? 'block' : 'none';
   document.getElementById('tab-planner').classList.toggle('active', name === 'planner');
   document.getElementById('tab-monitor').classList.toggle('active', name === 'monitor');
+  document.getElementById('tab-navigation').classList.toggle('active', name === 'navigation');
 
   if (name === 'monitor') {
     if (!monitorInitialized) { initMonitor(); monitorInitialized = true; }
@@ -24,6 +61,12 @@ function showView(name) {
     stopMonitorPolling();
     // Invalidate map size after becoming visible again
     setTimeout(() => { if (window._map) window._map.invalidateSize(); }, 100);
+  }
+
+  if (name === 'navigation') {
+    startNavPolling();
+  } else {
+    stopNavPolling();
   }
 }
 
@@ -229,6 +272,9 @@ async function sendToBoat() {
     if (resp.ok && data.status === "ok") {
       showEspResult("✓ " + data.message, true); setStep(4); setStatus("✓ Waypoints sent to ESP32 boat", "success");
       showToast("🚀 Waypoints sent! Starting mission...", "success", 1500);
+      lastWaypoints = waypoints;
+      document.getElementById('repeatBtn').disabled = false;
+      document.getElementById('repeatBtn').style.opacity = '1';
       setTimeout(() => { showView('monitor'); }, 1500);
     } else {
       showEspResult("✗ " + (data.error || "Unknown error"), false); setStatus("ESP32 error: " + (data.error || "Unknown"), "error");
@@ -374,35 +420,81 @@ function applyWQITheme(qualityStr) {
   else if(q.includes('moderate')) tc='wqi-moderate';
   mel.wqiCard.className = 'wqi-banner '+tc;
   let colorHex='#fff';
-  if(tc==='wqi-excellent') colorHex='var(--status-excellent)'; if(tc==='wqi-good') colorHex='var(--status-good)';
+  if(tc==='wqi-excellent') colorHex='var(--accent-1)'; if(tc==='wqi-good') colorHex='var(--status-good)';
   if(tc==='wqi-moderate') colorHex='var(--status-moderate)'; if(tc==='wqi-poor') colorHex='var(--status-poor)';
   if(tc==='wqi-very-poor') colorHex='var(--status-very-poor)';
-  mel.wqiQuality.style.background = '-webkit-linear-gradient(0deg, #fff, '+colorHex+')';
+  
+  const isLight = document.body.classList.contains('light-mode');
+  const startColor = isLight ? 'var(--text-primary)' : '#fff';
+  mel.wqiQuality.style.background = `-webkit-linear-gradient(0deg, ${startColor}, ${colorHex})`;
   mel.wqiQuality.style.webkitBackgroundClip = 'text'; mel.wqiQuality.style.webkitTextFillColor = 'transparent';
 }
 
 // Charts
+function getThemeColors() {
+  const isLight = document.body.classList.contains('light-mode');
+  return {
+    text: isLight ? '#0F172A' : 'rgba(255,255,255,0.8)',
+    muted: isLight ? '#64748B' : 'rgba(255,255,255,0.4)',
+    grid: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)',
+    cardBg: isLight ? '#FFFFFF' : '#111827'
+  };
+}
+
 function initMonCharts() {
-  Chart.defaults.color = "rgba(255,255,255,0.6)"; Chart.defaults.font.family = "'Outfit', sans-serif";
+  const tc = getThemeColors();
+  Chart.defaults.color = tc.muted;
+  Chart.defaults.font.family = "'Inter', sans-serif";
+  
   const co = {
     responsive:true, maintainAspectRatio:false,
     plugins:{legend:{display:false}},
-    scales:{ x:{grid:{color:'rgba(255,255,255,0.05)'}}, y:{grid:{color:'rgba(255,255,255,0.05)'},beginAtZero:false} },
+    scales:{ 
+      x:{ grid:{color:tc.grid}, ticks:{color:tc.muted} }, 
+      y:{ grid:{color:tc.grid}, ticks:{color:tc.muted}, beginAtZero:false } 
+    },
     elements:{ line:{tension:0.4,borderWidth:3}, point:{radius:0,hitRadius:10,hoverRadius:5} },
     animation:{duration:500}
   };
+
   const mk = (ctxId,title,clr,bg) => {
     const ctx = document.getElementById(ctxId).getContext('2d');
-    const g = ctx.createLinearGradient(0,0,0,300); g.addColorStop(0,bg||clr); g.addColorStop(1,'rgba(0,0,0,0)');
-    return new Chart(ctx, { type:'line', data:{labels:[],datasets:[{label:title,data:[],borderColor:clr,backgroundColor:g,fill:true}]},
-      options:{...co, plugins:{title:{display:true,text:title,color:'#f8fafc',font:{size:16}},legend:{display:false}}} });
+    const g = ctx.createLinearGradient(0,0,0,240); 
+    g.addColorStop(0,bg||clr); g.addColorStop(1,'rgba(0,0,0,0)');
+    
+    return new Chart(ctx, { 
+      type:'line', 
+      data:{labels:[],datasets:[{label:title,data:[],borderColor:clr,backgroundColor:g,fill:true}]},
+      options:{
+        ...co, 
+        plugins:{
+          title:{display:true,text:title,color:tc.text,font:{size:14,weight:'600'},padding:{bottom:20}},
+          legend:{display:false}
+        }
+      } 
+    });
   };
-  monCharts.wqi = mk('chartWQI','WQI Trend','#8b5cf6','rgba(139,92,246,0.5)');
-  monCharts.temp = mk('chartTemp','Temperature (°C)','#f43f5e','rgba(244,63,94,0.5)');
-  monCharts.ph = mk('chartPH','pH Level','#10b981','rgba(16,185,129,0.5)');
-  monCharts.tds = mk('chartTDS','TDS (ppm)','#3b82f6','rgba(59,130,246,0.5)');
-  monCharts.tb = mk('chartTurbidity','Turbidity (NTU)','#eab308','rgba(234,179,8,0.5)');
-  monCharts.nh3 = mk('chartNH3','Ammonia (ppm)','#a855f7','rgba(168,85,247,0.5)');
+  monCharts.wqi = mk('chartWQI','WQI Trend','#8b5cf6','rgba(139,92,246,0.2)');
+  monCharts.temp = mk('chartTemp','Temperature (°C)','#f43f5e','rgba(244,63,94,0.2)');
+  monCharts.ph = mk('chartPH','pH Level','#10b981','rgba(16,185,129,0.2)');
+  monCharts.tds = mk('chartTDS','TDS (ppm)','#3b82f6','rgba(59,130,246,0.2)');
+  monCharts.tb = mk('chartTurbidity','Turbidity (NTU)','#eab308','rgba(234,179,8,0.2)');
+  monCharts.nh3 = mk('chartNH3','Ammonia (ppm)','#a855f7','rgba(168,85,247,0.2)');
+}
+
+function updateChartTheme() {
+  const tc = getThemeColors();
+  Chart.defaults.color = tc.muted;
+  
+  Object.values(monCharts).forEach(chart => {
+    if (!chart) return;
+    chart.options.scales.x.grid.color = tc.grid;
+    chart.options.scales.x.ticks.color = tc.muted;
+    chart.options.scales.y.grid.color = tc.grid;
+    chart.options.scales.y.ticks.color = tc.muted;
+    chart.options.plugins.title.color = tc.text;
+    chart.update('none'); // Update without animation for a snappier switch
+  });
 }
 
 function updateMonChartData(chart,labels,dataPoints) { chart.data.labels=labels; chart.data.datasets[0].data=dataPoints; chart.update(); }
@@ -417,4 +509,213 @@ function appendMonChartData(record) {
   };
   ap(monCharts.wqi,record.wqi); ap(monCharts.temp,record.temperature); ap(monCharts.ph,record.ph);
   ap(monCharts.tds,record.tds); ap(monCharts.tb,record.turbidity); ap(monCharts.nh3,record.nh3);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NAVIGATION CONTROL (ESP8266)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Send movement command to ESP8266
+let currentBoatMode = 'manual';
+
+async function sendCmd(direction) {
+  // Block movement commands if in AUTO mode
+  if (currentBoatMode === 'auto' && direction !== 'stop') return;
+
+  try {
+    const res = await fetch(`${ESP8266_BASE}/${direction}`,
+                            { method: 'GET' });
+    if (!res.ok) throw new Error('Bad response');
+  } catch (e) {
+    document.getElementById('esp8266Status').textContent =
+      '❌ Unreachable';
+    document.getElementById('esp8266Status').style.color =
+      '#f44336';
+  }
+}
+
+// Switch between auto/manual modes
+async function setMode(mode) {
+  try {
+    const res = await fetch(`${ESP8266_BASE}/mode/${mode}`);
+    const data = await res.json();
+    currentBoatMode = data.mode;
+    document.getElementById('modeLabel').textContent =
+      mode.toUpperCase();
+    document.getElementById('modeBanner').style.backgroundColor =
+      mode === 'auto' ? '#1a4a1a' : '#2a2a2a';
+    document.getElementById('esp8266Status').textContent =
+      '✅ Connected';
+    document.getElementById('esp8266Status').style.color =
+      '#4caf50';
+  } catch (e) {
+    document.getElementById('esp8266Status').textContent =
+      '❌ Unreachable';
+  }
+}
+
+// Poll ESP8266 status when Navigation tab is active
+let navPollInterval = null;
+
+function startNavPolling() {
+  navPollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`${ESP8266_BASE}/`);
+      const data = await res.json();
+      currentBoatMode = data.mode;
+      document.getElementById('modeLabel').textContent =
+        data.mode.toUpperCase();
+      document.getElementById('esp8266Status').textContent =
+        '✅ Connected';
+      document.getElementById('esp8266Status').style.color =
+        '#4caf50';
+    } catch (e) {
+      document.getElementById('esp8266Status').textContent =
+        '❌ Unreachable';
+      document.getElementById('esp8266Status').style.color =
+        '#f44336';
+    }
+  }, 3000);  // poll every 3 seconds
+}
+
+function stopNavPolling() {
+  if (navPollInterval) {
+    clearInterval(navPollInterval);
+    navPollInterval = null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REPEAT MISSION (Reversed Path)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function repeatMission() {
+  if (!lastWaypoints || lastWaypoints.length === 0) return;
+
+  // Reverse the waypoint array for the return journey
+  const reversedWaypoints = [...lastWaypoints].reverse();
+
+  const btn = document.getElementById('repeatBtn');
+  btn.textContent = '⏳ Sending return path...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('http://localhost:5000/send-to-esp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ waypoints: reversedWaypoints })
+    });
+
+    if (res.ok) {
+      showToast('Return path sent — boat retracing route...');
+      setTimeout(() => showView('monitor'), 1500);
+    } else {
+      showToast('Failed to send return path');
+    }
+  } catch (e) {
+    showToast('Could not reach Flask backend');
+  } finally {
+    btn.textContent = '🔁 Repeat Mission (Return Path)';
+    btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AI MISSION REPORT (Groq API)
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function generateAIReport() {
+  const btn = document.getElementById('aiReportBtn');
+  btn.textContent = '⏳ Generating...';
+  btn.disabled = true;
+
+  const box = document.getElementById('aiReportBox');
+  box.style.display = 'block';
+  box.textContent = 'Analysing session data...';
+
+  try {
+    // Fetch all data needed for the report
+    const [histRes, latestRes] = await Promise.all([
+      fetch('http://localhost:8000/history'),
+      fetch('http://localhost:8000/latest')
+    ]);
+
+    const history = await histRes.json();
+    const latest = await latestRes.json();
+
+    // Build WQI trend string from last 20 readings
+    const wqiTrend = history.slice(-20)
+                            .map(r => r.wqi)
+                            .join(', ');
+
+    // Compute simple per-parameter averages for context
+    const avg = (key) => {
+      const vals = history.map(r => r[key]).filter(v => v != null);
+      return vals.length
+        ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)
+        : 'N/A';
+    };
+
+    const prompt = `You are an environmental field analyst.
+An autonomous boat has just completed a water quality survey
+mission. Write a concise mission report based on this data.
+
+SESSION DATA:
+- Total readings collected: ${history.length}
+- Current WQI: ${latest.wqi}/100 (${latest.quality})
+- Latest values: pH ${latest.ph}, Turbidity ${latest.turbidity} NTU,
+  TDS ${latest.tds} ppm, Temperature ${latest.temperature}°C,
+  Ammonia ${latest.nh3} ppm
+- Session averages: pH ${avg('ph')}, Turbidity ${avg('turbidity')} NTU,
+  TDS ${avg('tds')} ppm, Ammonia ${avg('nh3')} ppm
+- WQI trend (last 20 readings, oldest→newest): ${wqiTrend}
+
+Write 2-3 short paragraphs covering:
+1. Overall water quality assessment with specific numbers
+2. Any notable trends visible in the WQI data
+3. A clear recommendation — is a second remediation pass needed?
+
+Use plain language suitable for an environmental field report.
+Be specific. Do not invent data not provided above.`;
+
+    const response = await fetch(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: [
+            {
+              role: "system",
+              content: "You are an environmental field analyst writing concise and professional mission reports."
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          temperature: 0.4,
+          max_tokens: 500
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.choices && data.choices.length > 0) {
+      box.textContent = data.choices[0].message.content.trim();
+    } else {
+      box.textContent = 'No response received from Groq API.';
+    }
+
+  } catch (e) {
+    box.textContent = 'Failed to generate report. Check your Groq API key and ensure both backends are running.';
+  } finally {
+    btn.textContent = '🤖 AI Summary';
+    btn.disabled = false;
+  }
 }
